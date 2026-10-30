@@ -25,15 +25,28 @@ python3 -m http.server 4173
 
 Open <http://localhost:4173>.
 
-## Publish on GitHub Pages
+## Publish on GitHub Pages (Windows-friendly)
 
-1. Create a **new public repository** named `arjun-rose-portfolio`. Do not reuse `Arjun_Rose_J_S`.
-2. Upload all files and folders from this project to the root of the new repository.
-3. The included GitHub Actions workflow deploys the site whenever you push to `main`.
-4. In the new repository, open **Settings → Pages** and select **GitHub Actions** as the build and deployment source.
-5. The expected project URL will be `https://arjunrose.github.io/arjun-rose-portfolio/`.
+The target is the **new public repository** `arjunrose/arjun-rose-portfolio`. Do not reuse or change `Arjun_Rose_J_S`.
 
-No build step or npm install is required for GitHub Pages.
+1. Extract this ZIP into a new folder on your computer.
+2. Install Git for Windows if it is not already installed, then open PowerShell in the extracted folder.
+3. Run `./publish.ps1`. It initializes Git in this folder, checks that the remote is exactly `arjunrose/arjun-rose-portfolio`, commits the files and pushes to `main`. It never force-pushes and stops if the remote points anywhere else. GitHub may prompt you to sign in.
+4. In the **new** repository, open **Settings → Pages** and select **GitHub Actions** as the build and deployment source.
+5. The included workflow deploys the site on pushes to `main`. The expected URL is `https://arjunrose.github.io/arjun-rose-portfolio/`.
+
+Alternatively, run these commands from the extracted project folder (after Git is installed and signed in):
+
+```powershell
+git init
+git branch -M main
+git add --all
+git commit -m "Publish Arjun Rose interactive portfolio"
+git remote add origin https://github.com/arjunrose/arjun-rose-portfolio.git
+git push -u origin main
+```
+
+No front-end build step or npm install is required for GitHub Pages.
 
 ## Optional real contact delivery (Vercel + Resend)
 
