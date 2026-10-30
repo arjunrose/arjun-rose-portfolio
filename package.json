@@ -1,0 +1,10 @@
+{
+  "name": "arjun-rose-portfolio-next",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive portfolio for Arjun Rose J S — robotics, automation, embedded systems and applied AI.",
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "preview": "python3 -m http.server 4173"
+  }
+}
