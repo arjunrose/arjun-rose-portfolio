@@ -18,11 +18,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Restore Portfolio 4 files
         run: |
+          set -e
+          cp .github/workflows/deploy.yml /tmp/portfolio4-deploy.yml
           cat source-v4/chunk-*.txt > /tmp/portfolio-v4.tar.xz.b64
           base64 -d /tmp/portfolio-v4.tar.xz.b64 > /tmp/portfolio-v4.tar.xz
           mkdir -p /tmp/portfolio-v4
           tar -xJf /tmp/portfolio-v4.tar.xz -C /tmp/portfolio-v4
           cp -a /tmp/portfolio-v4/arjun-rose-portfolio-v4/. .
+          cp /tmp/portfolio4-deploy.yml .github/workflows/deploy.yml
           git rm -r --ignore-unmatch source-v4 source-bundle
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
