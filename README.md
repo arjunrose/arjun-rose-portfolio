@@ -1,71 +1,85 @@
-# Arjun Rose J S — Interactive Engineering Portfolio
+# Arjun Rose J S — Portfolio 4.0 / Systems in Motion
 
-A custom, responsive portfolio designed around robotics, industrial automation, embedded hardware and applied AI. The site is static-first: it can be published free on GitHub Pages, and an optional Vercel serverless endpoint can deliver contact messages through Resend.
+**Direction:** Hybrid immersive + editorial + cybernetic. The first visitor interaction is an engineering atlas: choose a discipline and enter the related interactive area. This version builds on Portfolio 3.0 without changing the original `Arjun_Rose_J_S` repository.
 
-## Included experiences
+## Experience
 
-- Particle-field hero, custom robotic-arm artwork, motion-aware layout and dark/light themes.
-- Interactive 2-link inverse-kinematics arm (drag the target to calculate joint angles).
-- PLC start/stop/reset seal-in circuit visualisation.
-- Searchable and filterable project gallery with technical detail panels.
-- Featured automatic waste-sorting system architecture.
-- Industrial experience timeline, hardware platform list, skill matrix and selected credentials.
-- Live read-only public GitHub repository preview.
-- Local portfolio guide and `Ctrl/Cmd + K` command palette.
-- Recruiter view that prioritises selected projects, experience and contact information.
-- Contact form with a mailto fallback; optional Vercel + Resend delivery endpoint.
+- **Cinematic hero:** existing procedural Three.js 2-link robot digital twin.
+- **Interactive Engineering Atlas:** four clickable spaces—robot motion, visual intelligence, industrial control and mechatronic design—with animated orbit geometry, responsive nodes and focused descriptions.
+- **Engineering playground:** robot kinematics, PLC seal-in/E-stop simulation and a simulated waste perception-to-actuation workflow.
+- **Project case files:** searchable projects with architecture and engineering detail.
+- **Recruiter path:** resume, experience, capabilities and contact information.
+- **Claude portfolio guide:** floating chat experience powered by a server-side API route. It is grounded in the portfolio facts and instructed not to invent qualifications, results or metrics.
+- **Interaction polish:** responsive layout, reduced-motion support, theme switcher, keyboard command palette, accessible controls and lightweight procedural canvas effects.
 
-## Run locally
+## Tech stack
 
-No front-end package installation is required. With Python 3 installed:
+- Semantic HTML, CSS and vanilla JavaScript modules
+- Three.js from jsDelivr for the 3D robot model
+- Canvas-based procedural points and connection lines
+- GitHub REST API for read-only public repository previews
+- Vercel serverless function (`api/chat.js`) for the Claude Messages API
+- GitHub Actions workflow for GitHub Pages static deployment
+
+## Local preview
+
+The 3D module and the browser modules should be served over HTTP rather than opened as `file://`.
 
 ```bash
-python3 -m http.server 4173
+python -m http.server 4173
 ```
 
-Open <http://localhost:4173>.
+Open `http://localhost:4173`. The portfolio itself works as a static site. On GitHub Pages, the Claude panel will display setup instructions until an API endpoint is configured.
 
-## Publish on GitHub Pages (Windows-friendly)
+## Claude assistant setup
 
-The target is the **new public repository** `arjunrose/arjun-rose-portfolio`. Do not reuse or change `Arjun_Rose_J_S`.
+The browser never receives the Anthropic API key. The key is read only by `api/chat.js` from the server environment.
 
-1. Extract this ZIP into a new folder on your computer.
-2. Install Git for Windows if it is not already installed, then open PowerShell in the extracted folder.
-3. Run `./publish.ps1`. It initializes Git in this folder, checks that the remote is exactly `arjunrose/arjun-rose-portfolio`, commits the files and pushes to `main`. It never force-pushes and stops if the remote points anywhere else. GitHub may prompt you to sign in.
-4. In the **new** repository, open **Settings → Pages** and select **GitHub Actions** as the build and deployment source.
-5. The included workflow deploys the site on pushes to `main`. The expected URL is `https://arjunrose.github.io/arjun-rose-portfolio/`.
+### Option A — deploy the whole portfolio to Vercel (recommended for Claude)
 
-Alternatively, run these commands from the extracted project folder (after Git is installed and signed in):
+1. Import the **new** repository `arjunrose/arjun-rose-portfolio` into Vercel.
+2. Use the repository root as the project root and the **Other** framework preset; no frontend build command is required.
+3. In Vercel → Project → Settings → Environment Variables, add:
+   - `ANTHROPIC_API_KEY` — your Anthropic Console API key (secret)
+   - `SITE_ORIGIN` — the exact production origin, for example `https://your-project.vercel.app` (no trailing slash)
+   - `CLAUDE_MODEL` — optional; defaults to `claude-sonnet-5-5`
+4. Deploy. The frontend will automatically call `/api/chat` on non-GitHub-Pages hosts.
+5. Confirm the chat works with a low-cost test prompt. Anthropic API usage is billed by Anthropic; the portfolio does not include free Claude API credits.
 
-```powershell
-git init
-git branch -M main
-git add --all
-git commit -m "Publish Arjun Rose interactive portfolio"
-git remote add origin https://github.com/arjunrose/arjun-rose-portfolio.git
-git push -u origin main
-```
+### Option B — keep GitHub Pages as the website and host only the API on Vercel
 
-No front-end build step or npm install is required for GitHub Pages.
+1. Deploy the same repository to Vercel and configure `ANTHROPIC_API_KEY` as above.
+2. Set `SITE_ORIGIN` to your Vercel production origin and add `https://arjunrose.github.io` to `ALLOWED_ORIGINS` in the Vercel project environment variables.
+3. Edit `assistant-config.js` and set `window.ARJUN_CLAUDE_ENDPOINT` to your deployed endpoint, for example `https://your-project.vercel.app/api/chat`.
+4. Commit and deploy the updated static files to GitHub Pages.
 
-## Optional real contact delivery (Vercel + Resend)
+Never put `ANTHROPIC_API_KEY` in `assistant-config.js`, `app.js`, HTML, or any other public file. Rotate the key immediately if it is accidentally exposed.
 
-GitHub Pages is static hosting and cannot execute the `/api/contact.js` function. To enable direct form delivery, import this same repository into Vercel and add these environment variables:
+### Model selection
 
-- `RESEND_API_KEY` — API key from Resend.
-- `CONTACT_TO` — inbox that should receive portfolio messages (for example, `arjunrose2005@gmail.com`).
-- `CONTACT_FROM` — a sender address/domain verified in your Resend account.
+The default is `claude-sonnet-5-5`, which Anthropic's current model overview lists as the balanced speed/intelligence Sonnet option. Change `CLAUDE_MODEL` on the server to another model ID supported by your Anthropic account; no client rebuild is needed for a model-only change.
 
-Deploy on Vercel. Until those variables are configured, or when the static GitHub Pages site is used, the form falls back to opening the visitor's email application with the message prefilled. Do not commit API keys or email-provider secrets to Git.
+## Deploy the static website to GitHub Pages
 
-## Personal details to verify before public launch
+1. Extract this package into a new folder.
+2. Open PowerShell in that folder and run `./publish.ps1`.
+3. The script checks that the remote is exactly `https://github.com/arjunrose/arjun-rose-portfolio.git` and does not force-push.
+4. In the **new repository only**, open Settings → Pages and select GitHub Actions as the source if necessary.
+5. The included workflow deploys the static portfolio after a push to `main`.
 
-- Confirm the degree status and graduation wording.
-- Confirm the academic CGPA before publishing it; no CGPA is displayed in this version because the available sources disagree.
-- Replace the GitHub avatar with a preferred professional portrait if desired.
-- Add a current PDF résumé and project photos/videos when ready.
-- Add direct repository/demo links to individual project panels when you identify the exact public repositories.
+This workflow deploys static files only. GitHub Pages does not execute `api/chat.js`; use Option A or Option B to enable Claude.
 
-## Technical notes
+## Privacy and safety
 
-The site is plain HTML, CSS and browser JavaScript. The IK arm, PLC circuit simulation, particle field and portfolio guide execute locally. The portfolio guide is a deterministic navigation helper, not an LLM chatbot. The GitHub repository radar uses GitHub's public unauthenticated API and gracefully falls back to a profile link if the API is unavailable.
+- Chat messages are sent to the configured backend and then to Anthropic for model processing. The chat is not saved in browser storage by this frontend.
+- Do not invite visitors to share credentials, private documents or confidential company information.
+- The server function validates message length, checks allowed origins, applies a best-effort per-instance rate limit and keeps the API key server-side. For a high-traffic public launch, add a persistent rate-limit store and/or a CAPTCHA/Turnstile challenge.
+- The Claude assistant is informational and not an autonomous agent. It cannot send emails, apply for jobs, or access private systems.
+
+## Accuracy notes
+
+- The 3D robot, PLC ladder circuit and computer-vision pipeline are browser simulations, not live hardware connections or actual ML inference.
+- The waste-sorter description reflects a prototype architecture: ESP32-CAM capture, host/laptop YOLO inference and servo-based sorting. No unverified accuracy, throughput or yield numbers are claimed.
+- The GitHub repository preview uses public read-only data.
+- The contact form prepares a message in the visitor's email application.
+- No disputed CGPA is published in this version.

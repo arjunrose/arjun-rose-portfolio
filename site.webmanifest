@@ -1,9 +1,1 @@
-{
-  "name": "Arjun Rose J S — Engineer / Builder",
-  "short_name": "Arjun Rose",
-  "start_url": "./",
-  "display": "standalone",
-  "background_color": "#070a10",
-  "theme_color": "#070a10",
-  "icons": [{ "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
-}
+{"name":"Arjun Rose J S — Systems in Motion","short_name":"AR Portfolio","start_url":"./","display":"standalone","background_color":"#07090c","theme_color":"#091417","icons":[{"src":"assets/favicon.svg","sizes":"any","type":"image/svg+xml"}]}

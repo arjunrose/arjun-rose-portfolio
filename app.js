@@ -1,280 +1,517 @@
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches || new URLSearchParams(location.search).has('static-preview');
+
+// Boot sequence: a short visual transition, never a blocking asset dependency.
 (() => {
-  'use strict';
-  const $ = (selector, root = document) => root.querySelector(selector);
-  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const screen = $('#bootScreen'), bar = $('#bootProgress'), pct = $('#bootPercent');
+  if (!screen) return;
+  const started = performance.now();
+  const tick = now => {
+    const ratio = Math.min(1, (now - started) / 820);
+    const eased = 1 - Math.pow(1 - ratio, 3);
+    const value = Math.round(eased * 100);
+    bar.style.width = `${value}%`; pct.textContent = `${String(value).padStart(2, '0')}%`;
+    if (ratio < 1) requestAnimationFrame(tick);
+    else setTimeout(() => screen.classList.add('done'), 140);
+  };
+  requestAnimationFrame(tick);
+})();
 
-  // Theme, navigation and scroll telemetry.
-  const themeToggle = $('#themeToggle');
-  try { if (localStorage.getItem('arjun-theme') === 'light') document.body.classList.add('light-theme'); } catch (_) {}
-  const updateThemeGlyph = () => { themeToggle.querySelector('span').textContent = document.body.classList.contains('light-theme') ? '☀' : '◐'; };
-  updateThemeGlyph();
-  themeToggle.addEventListener('click', () => {
-    document.body.classList.toggle('light-theme');
-    try { localStorage.setItem('arjun-theme', document.body.classList.contains('light-theme') ? 'light' : 'dark'); } catch (_) {}
-    updateThemeGlyph();
+// Ambient points: lightweight 2D field, independent from the 3D scene.
+(() => {
+  const canvas = $('#starfield');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let width = 0, height = 0, points = [], dpr = 1, raf = 0;
+  const pointer = { x: -1000, y: -1000 };
+  const resize = () => {
+    dpr = Math.min(window.devicePixelRatio || 1, 1.6);
+    width = window.innerWidth; height = window.innerHeight;
+    canvas.width = Math.floor(width * dpr); canvas.height = Math.floor(height * dpr);
+    canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const count = Math.min(105, Math.floor(width * height / 14500));
+    points = Array.from({ length: count }, () => ({ x: Math.random() * width, y: Math.random() * height, r: .45 + Math.random() * 1.1, a: .12 + Math.random() * .32, dx: (Math.random() - .5) * .12, dy: (Math.random() - .5) * .12 }));
+  };
+  const draw = () => {
+    ctx.clearRect(0, 0, width, height);
+    for (const p of points) {
+      p.x += p.dx; p.y += p.dy;
+      if (p.x < -10) p.x = width + 10; if (p.x > width + 10) p.x = -10;
+      if (p.y < -10) p.y = height + 10; if (p.y > height + 10) p.y = -10;
+      const dx = pointer.x - p.x, dy = pointer.y - p.y, dist = Math.hypot(dx, dy);
+      const boost = dist < 180 ? (1 - dist / 180) * .25 : 0;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(197,226,204,${Math.min(.7, p.a + boost)})`; ctx.fill();
+    }
+    if (!reducedMotion) raf = requestAnimationFrame(draw);
+  };
+  window.addEventListener('pointermove', e => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true });
+  window.addEventListener('resize', resize, { passive: true });
+  resize(); draw();
+})();
+
+// Cursor aura only appears on devices with a precise pointer.
+if (matchMedia('(hover:hover) and (pointer:fine)').matches && !reducedMotion) {
+  const aura = $('#cursorAura');
+  let x = -400, y = -400, tx = x, ty = y;
+  window.addEventListener('pointermove', e => { tx = e.clientX; ty = e.clientY; aura.style.opacity = '.9'; }, { passive: true });
+  window.addEventListener('blur', () => { aura.style.opacity = '0'; });
+  const move = () => { x += (tx - x) * .12; y += (ty - y) * .12; aura.style.left = `${x}px`; aura.style.top = `${y}px`; requestAnimationFrame(move); };
+  move();
+}
+
+
+// Number counters animate once when the evidence strip enters view.
+(() => {
+  const counters = $$('[data-count]');
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    observer.unobserve(entry.target);
+    const element = entry.target, target = Number(element.dataset.count), plus = element.querySelector('span') ? '<span>+</span>' : '';
+    const started = performance.now(), duration = reducedMotion ? 0 : 850;
+    const tick = now => {
+      const progress = duration ? Math.min(1, (now - started) / duration) : 1;
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const value = Math.round(target * eased);
+      element.innerHTML = `${String(value).padStart(2, '0')}${plus}`;
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }), { threshold: .55 });
+  counters.forEach(counter => observer.observe(counter));
+})();
+
+// Subtle pointer tilt gives the project archive a dimensional, tactile response.
+if (matchMedia('(hover:hover) and (pointer:fine)').matches && !reducedMotion) {
+  $$('.project-card').forEach(card => {
+    let frame = 0;
+    card.addEventListener('pointermove', event => {
+      const rect = card.getBoundingClientRect();
+      const nx = (event.clientX - rect.left) / rect.width - .5;
+      const ny = (event.clientY - rect.top) / rect.height - .5;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        card.style.setProperty('--tilt-x', `${(-ny * 2.5).toFixed(2)}deg`);
+        card.style.setProperty('--tilt-y', `${(nx * 3.5).toFixed(2)}deg`);
+      });
+    });
+    card.addEventListener('pointerleave', () => {
+      card.style.setProperty('--tilt-x', '0deg'); card.style.setProperty('--tilt-y', '0deg');
+    });
   });
+}
 
-  const menuToggle = $('#menuToggle');
-  const mainNav = $('.main-nav');
-  menuToggle.addEventListener('click', () => {
-    const opened = mainNav.classList.toggle('open');
-    menuToggle.setAttribute('aria-expanded', String(opened));
-    menuToggle.setAttribute('aria-label', opened ? 'Close navigation' : 'Open navigation');
-  });
-  $$('.main-nav a').forEach(link => link.addEventListener('click', () => {
-    mainNav.classList.remove('open'); menuToggle.setAttribute('aria-expanded', 'false');
-  }));
-
-  const recruiterToggle = $('#recruiterToggle');
-  recruiterToggle.addEventListener('click', () => {
-    const active = document.body.classList.toggle('recruiter-mode');
-    recruiterToggle.innerHTML = `<span class="pulse-dot"></span> ${active ? 'FULL EXPERIENCE' : 'RECRUITER VIEW'}`;
-    recruiterToggle.setAttribute('aria-pressed', String(active));
-    if (active) document.querySelector('#work').scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' });
-  });
-
-  const progress = $('#scrollProgress');
-  const backToTop = $('#backToTop');
+// Scroll state and reveal-in-view choreography.
+(() => {
+  const readingLine = $('#readingLine'), topReturn = $('#topReturn');
+  let scrollTicking = false;
   const onScroll = () => {
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    progress.style.width = `${max > 0 ? (window.scrollY / max) * 100 : 0}%`;
-    backToTop.classList.toggle('show', window.scrollY > 650);
+    if (scrollTicking) return;
+    scrollTicking = true;
+    requestAnimationFrame(() => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const value = max > 0 ? (window.scrollY / max) * 100 : 0;
+      readingLine.style.width = `${value}%`;
+      topReturn.classList.toggle('show', window.scrollY > 650);
+      scrollTicking = false;
+    });
   };
   window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
-  backToTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' }));
-  $('#yearNow').textContent = new Date().getFullYear();
+  topReturn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' }));
+  const io = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (entry.isIntersecting) { entry.target.classList.add('visible'); io.unobserve(entry.target); }
+  }), { threshold: .13, rootMargin: '0px 0px -35px 0px' });
+  $$('.reveal').forEach(el => io.observe(el));
+  const sections = ['lab', 'projects', 'journey', 'capabilities'].map(id => document.getElementById(id)).filter(Boolean);
+  const navLinks = $$('.topnav a');
+  const sectionObserver = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (entry.isIntersecting) navLinks.forEach(link => link.classList.toggle('active', link.hash === `#${entry.target.id}`));
+  }), { rootMargin: '-35% 0px -55% 0px' });
+  sections.forEach(section => sectionObserver.observe(section));
+})();
 
-  // Reveal-on-scroll, with a no-motion fallback.
-  if (!reducedMotion && 'IntersectionObserver' in window) {
-    const observer = new IntersectionObserver(entries => entries.forEach(entry => {
-      if (entry.isIntersecting) { entry.target.classList.add('visible'); observer.unobserve(entry.target); }
-    }), { threshold: 0.12 });
-    $$('.intro-section, .lab-section, .work-section, .sorter-deep-dive, .journey-section, .capabilities-section, .proof-section, .github-section, .contact-section').forEach(el => { el.classList.add('reveal'); observer.observe(el); });
-  }
-
-  // Ambient particle field. It is decorative and intentionally has no data or network access.
-  const particleCanvas = $('#particleField');
-  if (particleCanvas && !reducedMotion) {
-    const ctx = particleCanvas.getContext('2d');
-    let particles = []; let pointer = { x: -1000, y: -1000 };
-    const resizeParticles = () => {
-      const rect = particleCanvas.getBoundingClientRect(); const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      particleCanvas.width = Math.max(1, Math.floor(rect.width * dpr)); particleCanvas.height = Math.max(1, Math.floor(rect.height * dpr));
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const count = Math.min(85, Math.max(34, Math.floor(rect.width / 13)));
-      particles = Array.from({ length: count }, () => ({ x: Math.random() * rect.width, y: Math.random() * rect.height, vx: (Math.random() - .5) * .17, vy: (Math.random() - .5) * .17, r: Math.random() * 1.4 + .35 }));
-    };
-    const drawParticles = () => {
-      const rect = particleCanvas.getBoundingClientRect(); ctx.clearRect(0, 0, rect.width, rect.height);
-      const light = document.body.classList.contains('light-theme');
-      for (let i = 0; i < particles.length; i++) {
-        const p = particles[i]; p.x += p.vx; p.y += p.vy;
-        if (p.x < -5 || p.x > rect.width + 5) p.vx *= -1;
-        if (p.y < -5 || p.y > rect.height + 5) p.vy *= -1;
-        const dx = pointer.x - p.x; const dy = pointer.y - p.y; const distance = Math.hypot(dx, dy);
-        if (distance < 110) { p.x -= dx * .00045; p.y -= dy * .00045; }
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fillStyle = light ? 'rgba(0,130,119,.46)' : 'rgba(112,242,223,.65)'; ctx.fill();
-        for (let j = i + 1; j < particles.length; j++) {
-          const q = particles[j]; const d = Math.hypot(p.x - q.x, p.y - q.y);
-          if (d < 105) { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.strokeStyle = light ? `rgba(0,120,112,${(1 - d / 105) * .13})` : `rgba(112,242,223,${(1 - d / 105) * .12})`; ctx.lineWidth = .7; ctx.stroke(); }
-        }
-      }
-      requestAnimationFrame(drawParticles);
-    };
-    particleCanvas.addEventListener('pointermove', e => { const r = particleCanvas.getBoundingClientRect(); pointer = { x: e.clientX - r.left, y: e.clientY - r.top }; });
-    particleCanvas.addEventListener('pointerleave', () => { pointer = { x: -1000, y: -1000 }; });
-    resizeParticles(); window.addEventListener('resize', resizeParticles, { passive: true }); requestAnimationFrame(drawParticles);
-  }
-
-  // Two-link inverse-kinematics arm demo.
-  const armCanvas = $('#armCanvas');
-  if (armCanvas) {
-    const c = armCanvas.getContext('2d');
-    let target = { x: 0, y: 0 }; let dragging = false; let reach = 180; let elbowUp = true; let armW = 700; let armH = 285; let scan = 0;
-    const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
-    const sizeArm = () => {
-      const box = armCanvas.getBoundingClientRect(); armW = Math.max(260, box.width); armH = Math.max(180, box.height);
-      const ratio = dpr(); armCanvas.width = Math.round(armW * ratio); armCanvas.height = Math.round(armH * ratio); c.setTransform(ratio, 0, 0, ratio, 0, 0);
-      if (!target.x) target = { x: armW * .36, y: armH * .37 };
-      drawArm();
-    };
-    const drawArm = () => {
-      c.clearRect(0, 0, armW, armH);
-      const base = { x: armW * .19, y: armH * .78 }; const scale = Math.min(armW / 700, armH / 280, 1.15);
-      const l1 = reach * .53 * scale; const l2 = reach * .47 * scale;
-      const dx = target.x - base.x; const dy = base.y - target.y;
-      const rawD = Math.hypot(dx, dy) || .001; const maxD = l1 + l2 - 2; const minD = Math.abs(l1 - l2) + 2;
-      const dist = Math.min(maxD, Math.max(minD, rawD)); const tx = base.x + dx / rawD * dist; const ty = base.y - dy / rawD * dist;
-      const d = Math.hypot(tx - base.x, base.y - ty);
-      const cosA = Math.max(-1, Math.min(1, (l1*l1 + d*d - l2*l2) / (2*l1*d)));
-      const angleTarget = Math.atan2(base.y - ty, tx - base.x); const offset = Math.acos(cosA) * (elbowUp ? 1 : -1); const a1 = angleTarget - offset;
-      const joint = { x: base.x + l1 * Math.cos(a1), y: base.y - l1 * Math.sin(a1) };
-      const a2 = Math.atan2(base.y - ty - (base.y - joint.y), tx - joint.x);
-      const end = { x: joint.x + l2 * Math.cos(a2), y: joint.y - l2 * Math.sin(a2) };
-      const light = document.body.classList.contains('light-theme');
-      // floor and measurement grid
-      c.strokeStyle = light ? 'rgba(0,80,85,.13)' : 'rgba(132,198,200,.11)'; c.lineWidth = 1;
-      for (let x = 0; x <= armW; x += 28) { c.beginPath(); c.moveTo(x,0); c.lineTo(x,armH); c.stroke(); }
-      for (let y = 0; y <= armH; y += 28) { c.beginPath(); c.moveTo(0,y); c.lineTo(armW,y); c.stroke(); }
-      c.strokeStyle = light ? 'rgba(0,93,98,.45)' : 'rgba(127,188,194,.34)'; c.setLineDash([4,5]); c.beginPath(); c.moveTo(0,base.y+12); c.lineTo(armW,base.y+12); c.stroke(); c.setLineDash([]);
-      // reach boundary
-      c.beginPath(); c.arc(base.x,base.y,l1+l2,Math.PI,Math.PI*2); c.strokeStyle = light ? 'rgba(0,143,133,.2)' : 'rgba(112,242,223,.16)'; c.setLineDash([3,7]); c.stroke(); c.setLineDash([]);
-      // arm links
-      const drawLink = (a,b,width) => { c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.lineWidth = width; c.lineCap='round'; c.strokeStyle = light ? '#607e82' : '#536f7d'; c.stroke(); c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.lineWidth = width*.24; c.strokeStyle = light ? '#008f85' : '#8ef8e8'; c.stroke(); };
-      drawLink(base,joint,14*scale); drawLink(joint,end,12*scale);
-      const drawJoint = (p,r) => { c.beginPath(); c.arc(p.x,p.y,r,0,Math.PI*2); c.fillStyle=light?'#17383d':'#09151d'; c.fill(); c.lineWidth=2; c.strokeStyle=light?'#008f85':'#a0fff4'; c.stroke(); c.beginPath();c.arc(p.x,p.y,r*.35,0,Math.PI*2);c.fillStyle=light?'#008f85':'#3de2d0';c.fill(); };
-      drawJoint(base,15*scale); drawJoint(joint,11*scale);
-      // base plinth
-      c.fillStyle = light ? '#42666a' : '#284653'; c.fillRect(base.x-25*scale,base.y+11,50*scale,9*scale);
-      c.fillStyle = light ? '#1e3d43' : '#c5e5e8'; c.font = '9px monospace'; c.fillText('BASE / J1',base.x-22,base.y+34);
-      // end effector
-      c.strokeStyle = light ? '#008f85' : '#9dfff3'; c.lineWidth=3; c.beginPath(); c.moveTo(end.x,end.y); c.lineTo(end.x+8,end.y-13); c.lineTo(end.x+19,end.y-13); c.stroke();
-      // target line and target
-      c.setLineDash([3,5]); c.strokeStyle=light?'rgba(0,143,133,.65)':'rgba(112,242,223,.6)';c.lineWidth=1;c.beginPath();c.moveTo(end.x,end.y);c.lineTo(target.x,target.y);c.stroke();c.setLineDash([]);
-      c.beginPath();c.arc(target.x,target.y,8,0,Math.PI*2);c.fillStyle=light?'#008f85':'#70f2df';c.fill();c.beginPath();c.arc(target.x,target.y,16,0,Math.PI*2);c.strokeStyle=light?'rgba(0,143,133,.45)':'rgba(112,242,223,.44)';c.stroke();
-      c.strokeStyle=light?'rgba(0,143,133,.4)':'rgba(112,242,223,.36)';c.beginPath();c.moveTo(target.x-25,target.y);c.lineTo(target.x+25,target.y);c.moveTo(target.x,target.y-25);c.lineTo(target.x,target.y+25);c.stroke();
-      const reachable = Math.abs(rawD - dist) < 2;
-      $('#armStatus').textContent = reachable ? 'TARGET LOCKED' : 'LIMIT / CLAMPED';
-      $('#armCoords').textContent = `X: ${Math.round(dx)} · Y: ${Math.round(dy)} · θ₁: ${(a1*180/Math.PI).toFixed(0)}° · θ₂: ${(Math.atan2(end.y-joint.y,end.x-joint.x)*180/Math.PI).toFixed(0)}°`;
-      scan += 1; if (scan % 4 === 0) { /* status is intentionally local */ }
-    };
-    const pointerToTarget = e => { const box=armCanvas.getBoundingClientRect(); const x=e.clientX-box.left; const y=e.clientY-box.top; target={x:Math.max(armW*.24,Math.min(armW*.94,x)),y:Math.max(armH*.12,Math.min(armH*.84,y))}; drawArm(); };
-    armCanvas.addEventListener('pointerdown', e => { dragging = true; armCanvas.setPointerCapture(e.pointerId); pointerToTarget(e); });
-    armCanvas.addEventListener('pointermove', e => { if (dragging) pointerToTarget(e); });
-    armCanvas.addEventListener('pointerup', () => { dragging = false; }); armCanvas.addEventListener('pointercancel', () => { dragging = false; });
-    $('#armReach').addEventListener('input', e => { reach=Number(e.target.value); $('#reachOutput').textContent=`${reach} px`; drawArm(); });
-    $('#armElbow').addEventListener('input', e => { elbowUp=Number(e.target.value)===0; $('#elbowOutput').textContent=elbowUp?'ELBOW UP':'ELBOW DOWN'; drawArm(); });
-    $('#armReset').addEventListener('click', () => { reach=180;elbowUp=true;$('#armReach').value='180';$('#armElbow').value='0';$('#reachOutput').textContent='180 px';$('#elbowOutput').textContent='ELBOW UP';target={x:armW*.36,y:armH*.37};drawArm(); });
-    sizeArm(); window.addEventListener('resize', sizeArm, { passive:true });
-  }
-
-  // Simulated PLC seal-in: START latches, STOP breaks, RESET clears.
-  let motorOn = false; let scanCount = 1;
-  const paintPlc = () => {
-    $('#plcLamp').classList.toggle('on', motorOn); $('#plcState').textContent = motorOn ? 'MOTOR RUNNING' : 'MOTOR STOPPED';
-    $('#startContact').classList.toggle('active', motorOn); $('#holdContact').classList.toggle('active', motorOn); $('#motorCoil').classList.toggle('active', motorOn);
-    $('#stopContact').classList.add('active'); $('#plcScan').textContent = String(scanCount).padStart(4,'0');
-    $('#rungLogicNote').textContent = motorOn ? 'M0.0 is latched. The parallel holding contact keeps Q0.0 energised.' : 'The motor output is de-energised. Press START to latch the run bit.';
-  };
-  const plcTransition = value => { motorOn=value; scanCount++; paintPlc(); };
-  $('#plcStart').addEventListener('click', () => plcTransition(true));
-  $('#plcStop').addEventListener('click', () => plcTransition(false));
-  $('#plcReset').addEventListener('click', () => plcTransition(false)); paintPlc();
-
-  // Selected projects: descriptions focus on implementation scope rather than inflated outcomes.
-  const projectDetails = {
-    waste:{kicker:'PROJECT / 01 · VISION + EMBEDDED',title:'Automatic waste sorter',description:'A prototype joining a trained YOLO model with an ESP32-CAM capture path and a servo-driven sorting mechanism. The laptop performs model inference; the control side maps the predicted category to the collector and bin movement.',details:[['PERCEPTION','YOLO model trained for plastic, organic, e-waste and recyclable classes'],['HARDWARE','ESP32-CAM, two servo motors and a collector mechanism'],['PIPELINE','Image capture → inference → class decision → actuation'],['ENGINEERING FOCUS','Coordinating computer vision decisions with physical movement']],tags:['YOLO','PYTHON','ESP32-CAM','SERVO CONTROL','COMPUTER VISION']},
-    areca:{kicker:'PROJECT / 02 · MECHANICAL DESIGN',title:'Areca palm climbing robot',description:'A mechanical design exploration for climbing and harvesting on an areca palm. The CAD work focuses on enclosure geometry, wheel interaction and a spring-based gripper concept, with motion studies used to reason about the mechanism.',details:[['DESIGN','Climbing robot concept and mechanical layout'],['CAD','Fusion 360 modelling and assembly'],['MECHANISM','Wheel geometry and spring-based gripper'],['VALIDATION','Digital design review and motion-oriented simulation']],tags:['FUSION 360','CAD','MECHANISM DESIGN','MOTION STUDY']},
-    sorting:{kicker:'PROJECT / 03 · INDUSTRIAL VISION',title:'Vision-based sorting automation',description:'A sorting automation concept using Python and OpenCV to inspect items and sensor-triggered pneumatic actuation to move them. Testing attention centred on response timing and mechanical alignment.',details:[['PERCEPTION','Python / OpenCV image processing'],['ACTUATION','Pneumatic pusher concept'],['CONTROL','Sensor-triggered sequence'],['FOCUS','Signal timing and mechanical alignment']],tags:['PYTHON','OPENCV','PNEUMATICS','SENSORS']},
-    mimic:{kicker:'PROJECT / 04 · ROBOTICS',title:'Mimic robotic arm',description:'A microcontroller-based arm that follows operator movement through sensor inputs and servo outputs. The build explores mapping sensed motion to coordinated joint movement.',details:[['INPUT','Sensor-based motion capture'],['CONTROL','Microcontroller signal processing'],['OUTPUT','Coordinated servo actuation'],['FOCUS','Stable mapping and repeatable movement']],tags:['ARDUINO','SERVO','SENSORS','ROBOTICS']},
-    human:{kicker:'PROJECT / 05 · EDGE AI',title:'Human detection for disaster response',description:'A Jetson Nano computer-vision exploration aimed at recognising people in camera imagery. It examines how inference can be brought closer to the sensing hardware.',details:[['COMPUTE','NVIDIA Jetson Nano'],['PERCEPTION','Human detection in camera frames'],['SOFTWARE','Python-based vision workflow'],['FOCUS','Edge inference and practical scene detection']],tags:['JETSON NANO','PYTHON','VISION','EDGE AI']},
-    plc:{kicker:'PROJECT / 06 · INDUSTRIAL CONTROL',title:'Siemens PLC control systems',description:'A collection of PLC programming and simulation exercises, including ladder logic, I/O configuration and HMI-oriented control sequences. Related practice has included CODESYS and Factory I/O workflows.',details:[['PLATFORM','Siemens S7 families and TIA Portal'],['LOGIC','Ladder logic, sequencing and interlocks'],['INTERFACE','HMI concepts and process visualisation'],['VALIDATION','Simulation, I/O mapping and troubleshooting']],tags:['TIA PORTAL','SIEMENS','LADDER LOGIC','HMI','CODESYS']},
-    idcard:{kicker:'PROJECT / 07 · COMPUTER VISION',title:'Student ID card detection',description:'A concept for detecting whether a student is wearing an ID card and linking the resulting event to a student information workflow. The intended workflow includes flagging missing-card events for an administrator.',details:[['MODEL','YOLO-based ID-card detection'],['VISION','Image-based presence classification'],['WORKFLOW','Detection record linked to student data'],['INTEGRATION IDEA','Admin notification workflow']],tags:['YOLOV8','PYTHON','DATABASE','AUTOMATION']},
-    dobot:{kicker:'PROJECT / 08 · ROBOT KINEMATICS',title:'Dobot Magician kinematic analysis',description:'A study of robot geometry, joint parameters and end-effector motion. The work connects forward and inverse kinematics reasoning to workspace and movement constraints.',details:[['PLATFORM','Dobot Magician'],['ANALYSIS','Forward and inverse kinematics'],['METHOD','Joint-space to Cartesian reasoning'],['FOCUS','Reachability and end-effector position']],tags:['DOBOT','KINEMATICS','MATLAB','ROBOTICS']},
-    plant:{kicker:'PROJECT / 09 · EMBEDDED IoT',title:'Smart plant monitoring',description:'An ESP8266-based plant monitoring prototype connecting sensors to a Blynk IoT dashboard. It explores remote visibility of basic plant-condition readings.',details:[['CONTROLLER','ESP8266'],['CONNECTIVITY','Wi-Fi / Blynk IoT'],['SENSING','Plant-condition sensor inputs'],['FOCUS','Remote monitoring and connected devices']],tags:['ESP8266','BLYNK','IoT','SENSORS']}
-  };
-  const modal = $('#projectModal');
-  const openProject = id => {
-    const p=projectDetails[id]; if(!p) return;
-    $('#modalKicker').textContent=p.kicker; $('#modalTitle').textContent=p.title; $('#modalDescription').textContent=p.description;
-    $('#modalDetails').innerHTML=p.details.map(([k,v])=>`<div class="modal-detail"><b>${escapeHtml(k)}</b><span>${escapeHtml(v)}</span></div>`).join('');
-    $('#modalTags').innerHTML=p.tags.map(t=>`<span>${escapeHtml(t)}</span>`).join('');
-    modal.classList.add('open'); modal.setAttribute('aria-hidden','false'); document.body.style.overflow='hidden'; $('#modalGithub').focus();
-  };
-  const closeProject = () => { modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); document.body.style.overflow=''; };
-  $$('.project-open').forEach(button=>button.addEventListener('click',()=>openProject(button.dataset.project)));
-  $$('[data-close-modal]').forEach(el=>el.addEventListener('click',closeProject));
-
-  const projectCards = $$('.project-card'); let activeFilter='all';
-  const projectSearch = $('#projectSearch');
-  const updateProjects = () => {
-    const query=projectSearch.value.trim().toLowerCase(); let visible=0;
-    projectCards.forEach(card=>{
-      const cats=card.dataset.category.split(' '); const text=(card.dataset.search+' '+card.innerText).toLowerCase();
-      const matchesFilter=activeFilter==='all'||cats.includes(activeFilter); const matchesQuery=!query||text.includes(query);
-      const show=matchesFilter&&matchesQuery; card.hidden=!show; if(show)visible++;
-    });
-    $('#projectCount').textContent=String(visible).padStart(2,'0')+' PROJECTS'; $('#emptyProjects').hidden=visible!==0;
-  };
-  $$('.filter-chip').forEach(button=>button.addEventListener('click',()=>{
-    activeFilter=button.dataset.filter; $$('.filter-chip').forEach(b=>b.classList.toggle('active',b===button)); updateProjects();
-  }));
-  projectSearch.addEventListener('input',updateProjects);
-
-  function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
-
-  // Public GitHub REST read: unauthenticated, and only displays public profile repositories.
-  const githubRepos = $('#githubRepos');
-  fetch('https://api.github.com/users/arjunrose/repos?sort=updated&per_page=100', { headers: { 'Accept':'application/vnd.github+json' } })
-    .then(response => { if (!response.ok) throw new Error(`GitHub API ${response.status}`); return response.json(); })
-    .then(repos => {
-      const chosen=repos.filter(r=>!r.fork).sort((a,b)=>new Date(b.pushed_at)-new Date(a.pushed_at)).slice(0,4);
-      $('#githubSync').textContent='SYNC COMPLETE';
-      if(!chosen.length){githubRepos.innerHTML='<p class="repo-item"><a href="https://github.com/arjunrose?tab=repositories">Browse repositories ↗</a></p>';return;}
-      githubRepos.innerHTML=chosen.map(r=>`<article class="repo-item"><a href="${r.html_url}" target="_blank" rel="noreferrer">${escapeHtml(r.name)} ↗</a><small>${escapeHtml(r.language||'SOURCE')}</small><p>${escapeHtml(r.description||'Public repository / project files')}</p></article>`).join('');
-    })
-    .catch(() => { $('#githubSync').textContent='LIVE LINK AVAILABLE'; githubRepos.innerHTML='<div class="repo-item"><a href="https://github.com/arjunrose?tab=repositories" target="_blank" rel="noreferrer">Open all public repositories ↗</a><small>GITHUB</small><p>Repository preview is unavailable right now. The profile link remains available.</p></div>'; });
-
-  // Contact route: use a configured serverless endpoint if present; otherwise prepare a mailto draft.
-  $('#contactForm').addEventListener('submit', async event => {
-    event.preventDefault(); const form=event.currentTarget; const values=Object.fromEntries(new FormData(form).entries());
-    const status=$('#formStatus'); const button=$('.submit-button',form);
-    if(values.website) return;
-    const subject=`Portfolio enquiry — ${values.topic||'Message'}`;
-    const body=`Name: ${values.name}\nEmail: ${values.email}\nTopic: ${values.topic}\n\n${values.message}`;
-    button.disabled=true; button.textContent='PREPARING...';
-    try {
-      const response=await fetch('/api/contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});
-      if(response.ok){status.textContent='Message sent. Thank you for reaching out.';form.reset();button.innerHTML='MESSAGE SENT <span>✓</span>';return;}
-    } catch (_) { /* Static GitHub Pages has no API route. */ }
-    status.textContent='Your email app is opening with the message ready. Review it and press Send.';
-    window.location.href=`mailto:arjunrose2005@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    button.disabled=false;button.innerHTML='PREPARE MESSAGE <span>↗</span>';
-  });
-
-  // Local portfolio guide. It routes visitors to existing content; it is not represented as a hosted LLM.
-  const guideLaunch=$('#guideLaunch'); const guidePanel=$('#guidePanel');
-  const guideOpen = open => { guidePanel.hidden=!open; guideLaunch.setAttribute('aria-expanded',String(open)); };
-  guideLaunch.addEventListener('click',()=>guideOpen(guidePanel.hidden)); $('#guideClose').addEventListener('click',()=>guideOpen(false));
-  const guideResponses = [
-    {match:/plc|automation|ladder|siemens|factory|hmi/i, text:'Industrial automation is in the Capabilities section. The Siemens PLC project and interactive seal-in rung are also available in the Work and Interactive Lab sections.',target:'#lab'},
-    {match:/robot|kinematic|dobot|arm|mechanical|areca/i, text:'Explore the inverse-kinematics arm in the Interactive Lab, then open the Areca palm climbing robot, Mimic arm and Dobot kinematics builds.',target:'#lab'},
-    {match:/ai|vision|yolo|waste|detection|jetson|opencv/i, text:'The strongest AI examples are the Automatic Waste Sorter, Human Detection for Disaster Response and Student ID Card Detection. The waste-sorting architecture is explained as a complete pipeline.',target:'#work'},
-    {match:/yaskawa|intern|experience|industry|tnpl|factory/i, text:'The Field Experience section covers the Yaskawa India internship, TNPL plant exposure and Siemens PLC training, including the robot platforms and plant systems.',target:'#journey'},
-    {match:/skill|stack|program|language|tool/i, text:'The Capabilities section groups the toolset into industrial automation, robotics and mechanics, vision and applied AI, and embedded connectivity.',target:'#capabilities'},
-    {match:/education|certificate|course|award|college/i, text:'Education and selected learning pathways are listed in the Education & Credentials section.',target:'#proof'},
-    {match:/contact|email|hire|job|recruit|opportunit/i, text:'Use the contact form or email arjunrose2005@gmail.com. LinkedIn and GitHub links are listed beside the contact section.',target:'#contact'},
-    {match:/github|repository|source|code/i, text:'The GitHub panel loads a live preview of public repositories when the GitHub API is reachable. You can also open the full profile directly.',target:'.github-section'}
-  ];
-  const answerGuide = query => {
-    const result=guideResponses.find(item=>item.match.test(query));
-    const response=result?result.text:'Try asking about PLC, robotics, AI projects, Yaskawa, education, skills, GitHub or contact. I can point you to the matching section.';
-    $('#guideResponse').textContent=response;
-    if(result) { const link=document.createElement('button'); link.className='text-button'; link.type='button'; link.textContent='GO TO SECTION ↗'; link.style.display='block'; link.style.marginTop='8px'; link.addEventListener('click',()=>{guideOpen(false);document.querySelector(result.target)?.scrollIntoView({behavior:reducedMotion?'auto':'smooth'});}); $('#guideResponse').appendChild(link); }
-  };
-  $('#guideForm').addEventListener('submit',e=>{e.preventDefault();const query=$('#guideInput').value.trim();if(query)answerGuide(query);});
-  $$('[data-guide]').forEach(b=>b.addEventListener('click',()=>answerGuide(b.dataset.guide)));
-
-  // Command palette: Ctrl/Cmd + K.
-  const palette=$('#commandPalette');const paletteInput=$('#paletteInput');
-  const openPalette=()=>{palette.classList.add('open');palette.setAttribute('aria-hidden','false');paletteInput.value='';paletteInput.focus();};
-  const closePalette=()=>{palette.classList.remove('open');palette.setAttribute('aria-hidden','true');};
-  document.addEventListener('keydown',e=>{
-    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}
-    if(e.key==='Escape'){closePalette();closeProject();guideOpen(false);}
-  });
-  $$('[data-close-palette]').forEach(el=>el.addEventListener('click',closePalette));
-  const action = key => {
-    const map={work:()=>$('#work').scrollIntoView({behavior:'smooth'}),lab:()=>$('#lab').scrollIntoView({behavior:'smooth'}),journey:()=>$('#journey').scrollIntoView({behavior:'smooth'}),contact:()=>$('#contact').scrollIntoView({behavior:'smooth'}),github:()=>window.open('https://github.com/arjunrose','_blank','noopener')};
-    if(map[key]){closePalette();map[key]();}
-  };
-  $$('.palette-results button').forEach(b=>b.addEventListener('click',()=>action(b.dataset.action)));
-  paletteInput.addEventListener('input',()=>{
-    const q=paletteInput.value.toLowerCase();
-    $$('.palette-results button').forEach(b=>{b.hidden=!!q&&!b.textContent.toLowerCase().includes(q);});
-  });
-  paletteInput.addEventListener('keydown',e=>{
-    if(e.key==='Enter'){const first=$('.palette-results button:not([hidden])');if(first)first.click();}
+// Theme switch. It affects CSS variables only; no page reload required.
+(() => {
+  const root = document.documentElement, button = $('#themeToggle');
+  const saved = localStorage.getItem('ar-theme');
+  if (saved === 'light' || saved === 'dark') root.dataset.theme = saved;
+  button.addEventListener('click', () => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next; localStorage.setItem('ar-theme', next);
+    button.setAttribute('aria-label', next === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
   });
 })();
+
+// Mobile navigation.
+(() => {
+  const button = $('#menuToggle'), menu = $('#mobileMenu');
+  const close = () => { menu.classList.remove('open'); menu.setAttribute('aria-hidden', 'true'); button.setAttribute('aria-expanded', 'false'); };
+  button.addEventListener('click', () => {
+    const open = !menu.classList.contains('open');
+    menu.classList.toggle('open', open); menu.setAttribute('aria-hidden', String(!open)); button.setAttribute('aria-expanded', String(open));
+  });
+  $$('a', menu).forEach(link => link.addEventListener('click', close));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+})();
+
+// Real-time 3D digital twin. If WebGL/CDN is unavailable, the rest of the portfolio still works.
+let THREE = null;
+const threeModuleReady = Promise.race([
+  import('three'),
+  new Promise((_, reject) => setTimeout(() => reject(new Error('3D module load timeout')), 5000))
+]).then(module => { THREE = module; return module; }).catch(error => {
+  console.warn('3D module unavailable; non-3D portfolio remains active.', error);
+  return null;
+});
+
+let heroTwin = null, labTwin = null;
+const twinInstances = [];
+function createRobotTwin(canvas, onPose = () => {}) {
+  if (!canvas) return null;
+  const host = canvas.parentElement;
+  const fallback = () => {
+    canvas.hidden = true; host?.classList.add('no-webgl');
+    const fallbackA1 = 20 * Math.PI / 180, fallbackA2 = 35 * Math.PI / 180;
+    const fallbackEnd = { x: 1.55 * Math.cos(fallbackA1) + 1.42 * Math.cos(fallbackA1 + fallbackA2), y: .78 + 1.55 * Math.sin(fallbackA1) + 1.42 * Math.sin(fallbackA1 + fallbackA2) };
+    onPose({ angle1: fallbackA1, angle2: fallbackA2, end: fallbackEnd, target: fallbackEnd, reachable: true });
+    if (host && !host.querySelector('.fallback-twin')) host.insertAdjacentHTML('beforeend', '<div class=\"fallback-twin\" aria-label=\"Stylised robotic arm illustration\"><svg viewBox=\"0 0 420 280\" role=\"img\" aria-label=\"Robotic arm illustration\"><defs><linearGradient id=\"fmetal\" x1=\"0\" x2=\"1\"><stop stop-color=\"#607b70\"/><stop offset=\".5\" stop-color=\"#e4f1d8\"/><stop offset=\"1\" stop-color=\"#587368\"/></linearGradient></defs><ellipse cx=\"208\" cy=\"244\" rx=\"120\" ry=\"16\" fill=\"#d6ff4f\" opacity=\".12\"/><path d=\"M116 235h184l-12 18H128z\" fill=\"#263b3d\" stroke=\"#d6ff4f\"/><path d=\"M200 222 165 128l33-11 43 95z\" fill=\"url(#fmetal)\" stroke=\"#c9e1d3\" stroke-width=\"3\"/><path d=\"m185 122 105-77 24 28-99 88z\" fill=\"url(#fmetal)\" stroke=\"#c9e1d3\" stroke-width=\"3\"/><circle cx=\"182\" cy=\"126\" r=\"21\" fill=\"#172a2b\" stroke=\"#d6ff4f\" stroke-width=\"5\"/><circle cx=\"300\" cy=\"62\" r=\"16\" fill=\"#172a2b\" stroke=\"#d6ff4f\" stroke-width=\"4\"/><path d=\"m313 55 51-6 8 14-49 13z\" fill=\"#75e5d6\"/><path d=\"m367 65 15 5-11 28-15-5m21-18 14 23\" fill=\"none\" stroke=\"#75e5d6\" stroke-width=\"5\" stroke-linecap=\"round\"/><circle cx=\"210\" cy=\"218\" r=\"25\" fill=\"#172a2b\" stroke=\"#d6ff4f\" stroke-width=\"5\"/><circle cx=\"210\" cy=\"218\" r=\"9\" fill=\"#d6ff4f\"/></svg><span>3D VIEW UNAVAILABLE / STATIC MODEL</span></div>');
+  };
+  if (!THREE) { fallback(); return null; }
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'low-power' }); }
+  catch (error) { console.warn('WebGL unavailable; showing a static model.', error); fallback(); return null; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+  renderer.setClearColor(0x000000, 0);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.12;
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x091015, .045);
+  const camera = new THREE.PerspectiveCamera(36, 1, .1, 60);
+  camera.position.set(.25, 2.8, 7.8); camera.lookAt(.15, 1.05, 0);
+  scene.add(new THREE.HemisphereLight(0xd9f1df, 0x1a2b2b, 1.55));
+  const key = new THREE.DirectionalLight(0xe8f5de, 2.4); key.position.set(-3, 5, 5); scene.add(key);
+  const rim = new THREE.PointLight(0xd6ff4f, 28, 10); rim.position.set(2.5, 2.4, 2); scene.add(rim);
+  const cyan = new THREE.PointLight(0x68e4d5, 14, 9); cyan.position.set(-2.5, 1.5, -1); scene.add(cyan);
+
+  const mat = (color, metalness = .65, roughness = .3) => new THREE.MeshStandardMaterial({ color, metalness, roughness });
+  const graphite = mat(0x263b3d, .85, .25), steel = mat(0x9fb8ad, .8, .25), bright = mat(0xe4f2df, .65, .23), acid = mat(0xd6ff4f, .45, .24), dark = mat(0x101b20, .75, .28), cyanMat = mat(0x75e5d6, .5, .2);
+  const robot = new THREE.Group(); scene.add(robot);
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(.72, .82, .28, 48), dark); base.position.y = .13; robot.add(base);
+  const baseRing = new THREE.Mesh(new THREE.TorusGeometry(.66, .025, 8, 64), acid); baseRing.rotation.x = Math.PI / 2; baseRing.position.y = .29; robot.add(baseRing);
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(.42, .48, .56, 40), graphite); pedestal.position.y = .52; robot.add(pedestal);
+  const shoulder = new THREE.Group(); shoulder.position.set(0, .78, 0); robot.add(shoulder);
+  const shoulderJoint = new THREE.Mesh(new THREE.SphereGeometry(.25, 32, 24), graphite); shoulder.add(shoulderJoint);
+  const shoulderCap = new THREE.Mesh(new THREE.SphereGeometry(.16, 24, 16), acid); shoulderCap.position.z = .18; shoulder.add(shoulderCap);
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(1.52, .18, .22), steel); upper.position.x = .78; shoulder.add(upper);
+  const upperStripe = new THREE.Mesh(new THREE.BoxGeometry(.88, .025, .232), bright); upperStripe.position.set(.88, .075, .002); shoulder.add(upperStripe);
+  const elbow = new THREE.Group(); elbow.position.x = 1.55; shoulder.add(elbow);
+  const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(.19, 28, 20), graphite); elbow.add(elbowJoint);
+  const elbowCap = new THREE.Mesh(new THREE.CylinderGeometry(.135, .135, .1, 32), acid); elbowCap.rotation.x = Math.PI / 2; elbowCap.position.z = .13; elbow.add(elbowCap);
+  const forearm = new THREE.Mesh(new THREE.BoxGeometry(1.12, .14, .18), bright); forearm.position.x = .56; elbow.add(forearm);
+  const forearmStripe = new THREE.Mesh(new THREE.BoxGeometry(.68, .018, .19), cyanMat); forearmStripe.position.set(.63, .06, .005); elbow.add(forearmStripe);
+  const wrist = new THREE.Group(); wrist.position.x = 1.12; elbow.add(wrist);
+  const wristJoint = new THREE.Mesh(new THREE.SphereGeometry(.115, 20, 16), acid); wrist.add(wristJoint);
+  const toolBody = new THREE.Mesh(new THREE.BoxGeometry(.24, .2, .18), graphite); toolBody.position.x = .16; wrist.add(toolBody);
+  const fingerOne = new THREE.Mesh(new THREE.BoxGeometry(.34, .045, .055), cyanMat); fingerOne.position.set(.36, .09, .02); wrist.add(fingerOne);
+  const fingerTwo = new THREE.Mesh(new THREE.BoxGeometry(.34, .045, .055), cyanMat); fingerTwo.position.set(.36, -.09, .02); wrist.add(fingerTwo);
+
+  const target = new THREE.Group(); scene.add(target);
+  const targetRing = new THREE.Mesh(new THREE.TorusGeometry(.18, .012, 8, 44), acid); target.add(targetRing);
+  const targetDot = new THREE.Mesh(new THREE.SphereGeometry(.045, 16, 12), acid); targetDot.position.z = .03; target.add(targetDot);
+  const targetRay = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, 4, 6), acid); targetRay.rotation.z = Math.PI / 2; targetRay.material = new THREE.MeshBasicMaterial({ color: 0xd6ff4f, transparent: true, opacity: .25 }); targetRay.position.set(0, 0, -.08); target.add(targetRay);
+  const targetHalo = new THREE.Mesh(new THREE.TorusGeometry(.27, .004, 6, 48), cyanMat); targetHalo.position.z = -.02; target.add(targetHalo);
+
+  // XY reference grid placed behind the arm, plus a coordinate origin marker.
+  const grid = new THREE.GridHelper(8, 40, 0x3c6660, 0x1c3636); grid.rotation.x = Math.PI / 2; grid.position.set(0, .02, -.28);
+  (Array.isArray(grid.material) ? grid.material : [grid.material]).forEach(material => { material.transparent = true; material.opacity = .32; });
+  scene.add(grid);
+  const axisMat = new THREE.LineBasicMaterial({ color: 0x6e9890, transparent: true, opacity: .35 });
+  const axes = new THREE.Group();
+  const xAxis = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-4, .78, -.25), new THREE.Vector3(4, .78, -.25)]);
+  const yAxis = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, -.25), new THREE.Vector3(0, 4, -.25)]);
+  axes.add(new THREE.Line(xAxis, axisMat), new THREE.Line(yAxis, axisMat)); scene.add(axes);
+
+  let angle1 = 20 * Math.PI / 180, angle2 = 35 * Math.PI / 180;
+  const lengths = { a: 1.55, b: 1.42 };
+  let desired = { x: lengths.a * Math.cos(angle1) + lengths.b * Math.cos(angle1 + angle2), y: .78 + lengths.a * Math.sin(angle1) + lengths.b * Math.sin(angle1 + angle2) };
+  let actual = { ...desired };
+  let dragging = false, destroyed = false, frame = 0;
+  let width = 0, height = 0, viewYaw = 0, targetYaw = 0;
+  host.addEventListener('pointermove', event => {
+    const rect = host.getBoundingClientRect();
+    targetYaw = ((event.clientX - rect.left) / Math.max(1, rect.width) - .5) * .18;
+  }, { passive: true });
+  host.addEventListener('pointerleave', () => { targetYaw = 0; }, { passive: true });
+
+  const forward = () => ({ x: lengths.a * Math.cos(angle1) + lengths.b * Math.cos(angle1 + angle2), y: .78 + lengths.a * Math.sin(angle1) + lengths.b * Math.sin(angle1 + angle2) });
+  const inverse = (x, y) => {
+    const yy = y - .78; const radius = Math.hypot(x, yy);
+    const clamped = Math.max(.48, Math.min(lengths.a + lengths.b - .03, radius));
+    const scale = radius > .001 ? clamped / radius : 1;
+    x *= scale; yy *= scale;
+    const c2 = Math.max(-1, Math.min(1, (x * x + yy * yy - lengths.a ** 2 - lengths.b ** 2) / (2 * lengths.a * lengths.b)));
+    const a2 = Math.acos(c2);
+    const a1 = Math.atan2(yy, x) - Math.atan2(lengths.b * Math.sin(a2), lengths.a + lengths.b * Math.cos(a2));
+    return { a1, a2, x, y: yy + .78, reachable: Math.abs(clamped - radius) < .025 };
+  };
+  const applyTarget = (x, y, report = true) => {
+    const solution = inverse(x, y);
+    angle1 = solution.a1; angle2 = solution.a2; desired = { x: solution.x, y: solution.y };
+    if (report) onPose({ angle1, angle2, end: forward(), target: desired, reachable: solution.reachable });
+  };
+  const applyAngles = (a1, a2, report = true) => {
+    angle1 = a1 * Math.PI / 180; angle2 = a2 * Math.PI / 180;
+    desired = forward();
+    if (report) onPose({ angle1, angle2, end: forward(), target: desired, reachable: true });
+  };
+  const resize = () => {
+    const rect = host.getBoundingClientRect(); width = Math.max(1, rect.width); height = Math.max(1, rect.height);
+    renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix();
+  };
+  const resizeObserver = new ResizeObserver(resize); resizeObserver.observe(host); resize();
+  const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), intersection = new THREE.Vector3();
+  const pointFromEvent = event => {
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    if (!raycaster.ray.intersectPlane(plane, intersection)) return null;
+    return { x: Math.max(-2.4, Math.min(2.5, intersection.x)), y: Math.max(.8, Math.min(3.05, intersection.y)) };
+  };
+  canvas.style.cursor = 'crosshair';
+  canvas.addEventListener('pointerdown', event => { dragging = true; canvas.setPointerCapture?.(event.pointerId); const p = pointFromEvent(event); if (p) applyTarget(p.x, p.y); });
+  canvas.addEventListener('pointermove', event => { if (!dragging) return; const p = pointFromEvent(event); if (p) applyTarget(p.x, p.y); });
+  const stopDrag = () => { dragging = false; };
+  canvas.addEventListener('pointerup', stopDrag); canvas.addEventListener('pointercancel', stopDrag); canvas.addEventListener('lostpointercapture', stopDrag);
+
+  const clock = new THREE.Clock();
+  const render = () => {
+    if (destroyed) return;
+    const dt = Math.min(clock.getDelta(), .05);
+    actual.x += (desired.x - actual.x) * Math.min(1, dt * 8);
+    actual.y += (desired.y - actual.y) * Math.min(1, dt * 8);
+    const pose = inverse(actual.x, actual.y);
+    shoulder.rotation.z = pose.a1; elbow.rotation.z = pose.a2;
+    target.position.set(desired.x, desired.y, .03);
+    target.rotation.z += dt * (reducedMotion ? 0 : .18);
+    viewYaw += (targetYaw - viewYaw) * Math.min(1, dt * 3);
+    robot.rotation.y = viewYaw + (reducedMotion ? 0 : Math.sin(performance.now() * .00025) * .018);
+    renderer.render(scene, camera);
+    if (!reducedMotion) frame = requestAnimationFrame(render);
+  };
+  render();
+  const dispose = () => { destroyed = true; cancelAnimationFrame(frame); resizeObserver.disconnect(); renderer.dispose(); };
+  const setJointAngles = (a1, a2) => applyAngles(a1, a2);
+  const setTarget = (x, y) => applyTarget(x, y);
+  const runSequence = async () => {
+    const path = [{ x: 1.7, y: 1.8 }, { x: 2.25, y: 1.05 }, { x: 2.0, y: 1.3 }, { x: 1.4, y: 2.2 }, { x: 1.7, y: 1.8 }];
+    for (const p of path) { if (destroyed) return; setTarget(p.x, p.y); await new Promise(resolve => setTimeout(resolve, 700)); }
+  };
+  const initial = forward(); desired = { ...initial }; actual = { ...initial }; target.position.set(desired.x, desired.y, .03);
+  onPose({ angle1, angle2, end: initial, target: desired, reachable: true });
+  const instance = { setJointAngles, setTarget, runSequence, dispose, getPose: () => ({ angle1, angle2, end: forward() }) };
+  twinInstances.push(instance);
+  return instance;
+}
+
+const initialiseDigitalTwins = () => {
+  heroTwin = createRobotTwin($('#heroRobot'), pose => {
+    $('#heroHeroCoords').textContent = `X ${pose.end.x.toFixed(2)} / Y ${pose.end.y.toFixed(2)}`;
+    $('#heroToolState').textContent = 'TRACKING';
+  });
+
+  labTwin = createRobotTwin($('#twinRobot'), pose => {
+    $('#jointOne').value = String(Math.round(pose.angle1 * 180 / Math.PI));
+    $('#jointTwo').value = String(Math.round(pose.angle2 * 180 / Math.PI));
+    $('#jointOneValue').textContent = `${pose.angle1 >= 0 ? '+' : ''}${(pose.angle1 * 180 / Math.PI).toFixed(1)}°`;
+    $('#jointTwoValue').textContent = `${pose.angle2 >= 0 ? '+' : ''}${(pose.angle2 * 180 / Math.PI).toFixed(1)}°`;
+    $('#telemetryX').textContent = pose.end.x.toFixed(2);
+    $('#telemetryY').textContent = pose.end.y.toFixed(2);
+    $('#telemetryElbow').textContent = pose.angle2 >= 0 ? 'UP' : 'DOWN';
+    $('#telemetryStatus').textContent = pose.reachable ? 'READY' : 'LIMIT';
+    $('#twinReachability').textContent = pose.reachable ? 'TARGET REACHABLE' : 'TARGET CLAMPED';
+  });
+};
+threeModuleReady.then(initialiseDigitalTwins);
+
+$('#jointOne')?.addEventListener('input', event => labTwin?.setJointAngles(Number(event.target.value), Number($('#jointTwo').value)));
+$('#jointTwo')?.addEventListener('input', event => labTwin?.setJointAngles(Number($('#jointOne').value), Number(event.target.value)));
+$('#robotReset')?.addEventListener('click', () => { labTwin?.setJointAngles(20, 35); heroTwin?.setJointAngles(20, 35); });
+$('#robotSequence')?.addEventListener('click', async event => {
+  const button = event.currentTarget; button.disabled = true; button.textContent = 'SEQUENCE RUNNING…';
+  await threeModuleReady;
+  if (labTwin) await labTwin.runSequence();
+  button.disabled = false; button.innerHTML = 'RUN PICK SEQUENCE <span>↗</span>';
+});
+
+// PLC seal-in circuit with a separate emergency-stop chain.
+(() => {
+  let running = false, estop = false, startPulse = false, scan = 1, pulseTimer = 0;
+  const paint = () => {
+    $('#plcIndicator').classList.toggle('on', running);
+    $('#plcState').textContent = estop ? 'SAFETY TRIPPED' : running ? 'MOTOR RUNNING' : 'MOTOR STOPPED';
+    $('#startContact').classList.toggle('active', startPulse);
+    $('#holdContact').classList.toggle('active', running);
+    $('#motorCoil').classList.toggle('active', running);
+    $('#stopContact').classList.toggle('active', !estop);
+    $('#scanCount').textContent = String(scan).padStart(4, '0');
+    $('#ioStart').textContent = startPulse ? 'PULSE' : 'LOW'; $('#ioStart').classList.toggle('high', startPulse);
+    $('#ioStop').textContent = 'HEALTHY'; $('#ioStop').classList.add('high');
+    $('#ioEstop').textContent = estop ? 'TRIPPED' : 'CLEAR'; $('#ioEstop').classList.toggle('trip', estop);
+    $('#ladderFeedback').textContent = estop ? 'E-STOP active. Safety chain open; output forced OFF.' : running ? 'M0.0 is latched. Holding contact maintains Q0.0.' : 'Run bit is FALSE. Output is de-energised.';
+    $('#plcEstop').textContent = estop ? 'CLEAR E-STOP' : 'E-STOP';
+  };
+  const transition = next => { running = next && !estop; startPulse = false; scan++; paint(); };
+  $('#plcStart').addEventListener('click', () => {
+    if (estop) return;
+    running = true; startPulse = true; scan++; paint();
+    clearTimeout(pulseTimer); pulseTimer = setTimeout(() => { startPulse = false; scan++; paint(); }, 320);
+  });
+  $('#plcStop').addEventListener('click', () => transition(false));
+  $('#plcReset').addEventListener('click', () => transition(false));
+  $('#plcEstop').addEventListener('click', () => { estop = !estop; if (estop) running = false; startPulse = false; scan++; paint(); });
+  paint();
+})();
+
+// Transparent, deterministic process model for the portfolio's waste sorter.
+(() => {
+  const scenarios = {
+    plastic: { object: 'PLASTIC', class: 'PLASTIC · 0.91', bin: 'BIN 01', bars: [88, 32, 18] },
+    organic: { object: 'ORGANIC', class: 'ORGANIC · 0.89', bin: 'BIN 02', bars: [25, 89, 14] },
+    ewaste: { object: 'E-WASTE', class: 'E-WASTE · 0.93', bin: 'BIN 03', bars: [16, 20, 93] },
+    recyclable: { object: 'RECYCLABLE', class: 'RECYCLABLE · 0.87', bin: 'BIN 04', bars: [31, 24, 87] }
+  };
+  const input = $('.vision-input'), model = $('.vision-model'), output = $('.vision-output');
+  $('#visionRun').addEventListener('click', async event => {
+    const key = $('#wasteSelect').value, data = scenarios[key], button = event.currentTarget;
+    button.disabled = true; button.textContent = 'PROCESSING…';
+    [input, model, output].forEach(el => el.classList.remove('processed'));
+    $('#visionObject').textContent = 'FRAME CAPTURED'; $('#visionClass').textContent = 'INFERENCE RUNNING'; $('#visionRoute').textContent = 'ROUTE PENDING';
+    await new Promise(r => setTimeout(r, 380)); input.classList.add('processed');
+    $('#visionObject').textContent = data.object;
+    await new Promise(r => setTimeout(r, 450)); model.classList.add('processed');
+    $('#visionClass').textContent = data.class;
+    $$('.confidence-bars i').forEach((bar, i) => bar.style.setProperty('--w', `${data.bars[i]}%`));
+    await new Promise(r => setTimeout(r, 380)); output.classList.add('processed'); $('#visionRoute').textContent = data.bin;
+    button.disabled = false; button.innerHTML = 'PROCESS FRAME ↗';
+  });
+})();
+
+// Project case files: authored details, not auto-generated claims.
+const caseFiles = {
+  waste: { kicker: 'CASE FILE / 001 · VISION + EMBEDDED', title: 'Automatic waste sorter', summary: 'A prototype that connects custom-trained waste recognition with a physical sorting mechanism. The ESP32-CAM provides the camera input; a laptop performs YOLO inference and maps the predicted class to servo movement.', details: [['PERCEPTION', 'Custom YOLO model trained around plastic, organic, e-waste and recyclable categories.'], ['HARDWARE', 'ESP32-CAM, two servo motors and a collector / bin mechanism.'], ['DATA FLOW', 'Image capture → model inference → category decision → actuator command.'], ['ENGINEERING FOCUS', 'Making a software classification produce a predictable physical action.']], tags: ['YOLO', 'PYTHON', 'ESP32-CAM', 'SERVO CONTROL', 'COMPUTER VISION'] },
+  areca: { kicker: 'CASE FILE / 002 · MECHANICAL DESIGN', title: 'Areca palm climbing robot', summary: 'A mechanical design exploration for climbing and harvesting on an areca palm. CAD work focused on the enclosure, wheel interaction, a spring-based gripper concept and motion-oriented checks.', details: [['DESIGN INTENT', 'Explore a climbing robot layout for a vertical agricultural surface.'], ['CAD', 'Fusion 360 modelling and assembly.'], ['MECHANISM', 'Wheel geometry and a spring-based gripping concept.'], ['ENGINEERING FOCUS', 'Think through contact, stability, fit and motion before fabrication.']], tags: ['FUSION 360', 'CAD', 'MECHANISM DESIGN', 'MOTION STUDY'] },
+  sorting: { kicker: 'CASE FILE / 003 · INDUSTRIAL VISION', title: 'Vision-based sorting automation', summary: 'A sorting automation concept using Python and OpenCV to inspect objects and sensor-triggered pneumatic actuation to move them. The work considered response timing and mechanical alignment.', details: [['PERCEPTION', 'Python / OpenCV image processing.'], ['SEQUENCE', 'Sensor-triggered decision and actuation sequence.'], ['ACTUATION', 'Pneumatic pusher concept.'], ['ENGINEERING FOCUS', 'Coordinate visual inspection with physical timing.']], tags: ['PYTHON', 'OPENCV', 'PNEUMATICS', 'SENSORS'] },
+  mimic: { kicker: 'CASE FILE / 004 · ROBOTICS', title: 'Mimic robotic arm', summary: 'A microcontroller-based arm that follows operator motion through sensor inputs and servo outputs. The build explores mapping sensed movement to coordinated joint motion.', details: [['INPUT', 'Sensor-based operator movement.'], ['CONTROL', 'Microcontroller signal handling and mapping.'], ['OUTPUT', 'Coordinated servo actuation across arm joints.'], ['ENGINEERING FOCUS', 'Repeatable movement and stable control response.']], tags: ['ARDUINO', 'SERVO', 'SENSORS', 'ROBOTICS'] },
+  human: { kicker: 'CASE FILE / 005 · EDGE AI', title: 'Human detection for disaster response', summary: 'A Jetson Nano computer-vision exploration aimed at recognising people in camera imagery. It examines how inference can be brought closer to the sensing hardware.', details: [['COMPUTE', 'NVIDIA Jetson Nano.'], ['PERCEPTION', 'Human detection in camera frames.'], ['SOFTWARE', 'Python-based vision workflow.'], ['ENGINEERING FOCUS', 'Edge inference and practical scene detection.']], tags: ['JETSON NANO', 'PYTHON', 'VISION', 'EDGE AI'] },
+  plc: { kicker: 'CASE FILE / 006 · INDUSTRIAL CONTROL', title: 'PLC sequencing & conveyor logic', summary: 'A group of PLC programming and simulation exercises that include ladder logic, I/O configuration, interlocks, sensor-based sequence steps and drive-control simulation.', details: [['PLATFORM', 'Siemens PLC learning with TIA Portal; CODESYS practice.'], ['LOGIC', 'Ladder logic, seal-in circuits, sequencing and interlocks.'], ['SIMULATION', 'Factory I/O, Modbus mapping and output checks.'], ['ENGINEERING FOCUS', 'Trace the I/O signal path and debug the process step by step.']], tags: ['TIA PORTAL', 'CODESYS', 'FACTORY I/O', 'LADDER LOGIC'] },
+  idcard: { kicker: 'CASE FILE / 007 · COMPUTER VISION', title: 'Student ID-card detection', summary: 'A computer-vision concept for detecting whether a student is wearing an ID card and linking the event to a student-information workflow. The intended flow includes flagging missing-card events for an administrator.', details: [['MODEL', 'YOLO-based ID-card detection concept.'], ['VISION', 'Image-based card presence recognition.'], ['WORKFLOW', 'Detection event linked to student details.'], ['INTEGRATION IDEA', 'Administrative notification for a missing-card event.']], tags: ['YOLOV8', 'PYTHON', 'DATABASE', 'AUTOMATION'] },
+  dobot: { kicker: 'CASE FILE / 008 · ROBOT KINEMATICS', title: 'Dobot Magician kinematic analysis', summary: 'A study of robot geometry, joint parameters and end-effector motion. The work connects forward and inverse kinematics reasoning to reachability and movement constraints.', details: [['PLATFORM', 'Dobot Magician.'], ['ANALYSIS', 'Forward and inverse kinematics.'], ['METHOD', 'Joint-space and Cartesian-position reasoning.'], ['ENGINEERING FOCUS', 'Understand reachability and end-effector position.']], tags: ['DOBOT', 'KINEMATICS', 'MATLAB', 'ROBOTICS'] },
+  plant: { kicker: 'CASE FILE / 009 · EMBEDDED IoT', title: 'Smart plant monitoring', summary: 'An ESP8266-based plant monitoring prototype connecting sensor readings to a Blynk IoT dashboard, exploring remote visibility of basic plant-condition data.', details: [['CONTROLLER', 'ESP8266.'], ['CONNECTIVITY', 'Wi-Fi connection and Blynk IoT dashboard.'], ['SENSING', 'Plant-condition sensor inputs.'], ['ENGINEERING FOCUS', 'Connect a physical sensor reading to a remote interface.']], tags: ['ESP8266', 'BLYNK', 'IoT', 'SENSORS'] }
+};
+(() => {
+  const modal = $('#caseModal');
+  const close = () => { modal.classList.remove('open'); modal.setAttribute('aria-hidden', 'true'); document.body.classList.remove('modal-open'); };
+  const open = key => {
+    const item = caseFiles[key]; if (!item) return;
+    $('#caseKicker').textContent = item.kicker; $('#caseTitle').textContent = item.title; $('#caseSummary').textContent = item.summary;
+    $('#caseDetails').innerHTML = item.details.map(([label, value]) => `<div class="case-detail"><b>${escapeHTML(label)}</b><span>${escapeHTML(value)}</span></div>`).join('');
+    $('#caseTags').innerHTML = item.tags.map(tag => `<span>${escapeHTML(tag)}</span>`).join('');
+    modal.classList.add('open'); modal.setAttribute('aria-hidden', 'false'); document.body.classList.add('modal-open'); $('.case-close').focus();
+  };
+  $$('.case-open').forEach(button => button.addEventListener('click', () => open(button.dataset.case)));
+  $$('[data-close-case]').forEach(el => el.addEventListener('click', close));
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+})();
+function escapeHTML(value) { return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
+
+// Project filters and free-text search.
+(() => {
+  const cards = $$('.project-card'), search = $('#projectSearch'), empty = $('#projectEmpty');
+  let activeFilter = 'all';
+  const update = () => {
+    const q = search.value.trim().toLowerCase(); let count = 0;
+    cards.forEach(card => {
+      const categories = card.dataset.category.split(' ');
+      const text = `${card.dataset.search} ${card.innerText}`.toLowerCase();
+      const visible = (activeFilter === 'all' || categories.includes(activeFilter)) && (!q || text.includes(q));
+      card.hidden = !visible; if (visible) count++;
+    });
+    empty.hidden = count > 0;
+  };
+  $$('.filter-button').forEach(button => button.addEventListener('click', () => {
+    activeFilter = button.dataset.filter; $$('.filter-button').forEach(el => el.classList.toggle('active', el === button)); update();
+  }));
+  search.addEventListener('input', update);
+})();
+
+// Read-only public repository radar. It never requests credentials.
+(() => {
+  const list = $('#repoList'), status = $('#repoStatus');
+  fetch('https://api.github.com/users/arjunrose/repos?sort=updated&per_page=100', { headers: { Accept: 'application/vnd.github+json' } })
+    .then(response => { if (!response.ok) throw new Error(`GitHub API ${response.status}`); return response.json(); })
+    .then(repositories => {
+      const chosen = repositories.filter(repo => !repo.fork).sort((a, b) => new Date(b.pushed_at) - new Date(a.pushed_at)).slice(0, 4);
+      status.textContent = 'SYNC COMPLETE';
+      if (!chosen.length) throw new Error('No public repositories returned');
+      list.innerHTML = chosen.map(repo => `<article class="repo-item"><a href="${escapeHTML(repo.html_url)}" target="_blank" rel="noreferrer">${escapeHTML(repo.name)} ↗</a><small>${escapeHTML(repo.language || 'SOURCE')}</small><p>${escapeHTML(repo.description || 'Public project repository')}</p></article>`).join('');
+    })
+    .catch(() => {
+      status.textContent = 'PROFILE LINK READY';
+      list.innerHTML = '<article class="repo-item"><a href="https://github.com/arjunrose?tab=repositories" target="_blank" rel="noreferrer">Browse all public repositories ↗</a><small>GITHUB</small><p>Repository preview is unavailable right now. Open the profile to explore the complete project archive.</p></article>';
+    });
+})();
+
+
+// Recruiter cut: a guided jump to the strongest evidence, without hiding any work.
+(() => {
+  const button = $('#recruiterMode');
+  if (!button) return;
+  button.addEventListener('click', () => {
+    button.classList.add('active'); button.innerHTML = 'RECRUITER ROUTE <span>✓</span>';
+    document.getElementById('journey')?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' });
+    setTimeout(() => { button.classList.remove('active'); button.innerHTML = 'RECRUITER CUT <span>↗</span>'; }, 2600);
+  });
+})();
+
+// Contact form: safe mailto handoff for a static GitHub Pages deployment.
+(() => {
+  const form = $('#contactForm');
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const name = String(data.get('name') || '').trim(), email = String(data.get('email') || '').trim();
+    const topic = String(data.get('topic') || 'Portfolio enquiry'), message = String(data.get('message') || '').trim();
+    if (!name || !email || !message) { $('#contactStatus').textContent = 'Please complete all required fields.'; return; }
+    const subject = encodeURIComponent(`${topic} — ${name}`);
+    const body = encodeURIComponent(`Hello Arjun,\n\n${message}\n\nFrom: ${name}\nEmail: ${email}`);
+    $('#contactStatus').textContent = 'Opening your email application with the message prepared.';
+    window.location.href = `mailto:arjunrose2005@gmail.com?subject=${subject}&body=${body}`;
+  });
+})();
+
+// Keyboard command palette (Ctrl/Cmd + K).
+(() => {
+  const overlay = $('#commandOverlay'), input = $('#commandInput'), list = $('#commandList');
+  const open = () => { overlay.classList.add('open'); overlay.setAttribute('aria-hidden', 'false'); input.value = ''; filter(''); input.focus(); };
+  const close = () => { overlay.classList.remove('open'); overlay.setAttribute('aria-hidden', 'true'); };
+  const filter = query => {
+    const q = query.trim().toLowerCase();
+    $$('button,a', list).forEach(item => { item.hidden = q && !item.textContent.toLowerCase().includes(q); });
+  };
+  $('#commandTrigger').addEventListener('click', open);
+  $$('[data-close-command]').forEach(el => el.addEventListener('click', close));
+  input.addEventListener('input', () => filter(input.value));
+  $$('[data-target]', list).forEach(button => button.addEventListener('click', () => { const target = button.dataset.target; close(); document.getElementById(target)?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' }); }));
+  document.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); open(); }
+    if (event.key === 'Escape') close();
+  });
+})();
+
+$('#currentYear').textContent = new Date().getFullYear();

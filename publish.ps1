@@ -1,56 +1,67 @@
 $ErrorActionPreference = 'Stop'
-$RepositoryUrl = 'https://github.com/arjunrose/arjun-rose-portfolio.git'
-
-Write-Host 'Arjun Rose Portfolio 2.0 - safe publisher' -ForegroundColor Cyan
-
-foreach ($required in @('index.html', 'styles.css', 'app.js', '.github/workflows/deploy.yml')) {
-    if (-not (Test-Path $required)) {
-        throw "Required file '$required' was not found. Extract the portfolio ZIP and run this script from the extracted project folder."
-    }
-}
+$RepoUrl = 'https://github.com/arjunrose/arjun-rose-portfolio.git'
+$Expected = 'https://github.com/arjunrose/arjun-rose-portfolio.git'
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    throw 'Git is not installed or not on PATH. Install Git for Windows, reopen PowerShell, and run this script again.'
+  throw 'Git is not installed or is not on PATH. Install Git for Windows, reopen PowerShell, then run this script again.'
 }
 
-if (-not (Test-Path '.git')) {
-    git init
-    if ($LASTEXITCODE -ne 0) { throw 'git init failed.' }
+$Current = (Get-Location).Path
+if (-not (Test-Path (Join-Path $Current 'index.html'))) {
+  throw 'Run this script from the extracted portfolio folder. index.html was not found here.'
+}
+
+if (-not (Test-Path (Join-Path $Current '.git'))) {
+  git init
+  if ($LASTEXITCODE -ne 0) { throw 'Could not initialise the local Git repository.' }
 }
 
 git branch -M main
-if ($LASTEXITCODE -ne 0) { throw 'Could not select the main branch.' }
+if ($LASTEXITCODE -ne 0) { throw 'Could not set the local branch to main.' }
 
-$existingRemote = git remote get-url origin 2>$null
-$remoteExit = $LASTEXITCODE
-if ($remoteExit -eq 0 -and $existingRemote) {
-    $normalized = $existingRemote.Trim().TrimEnd('/')
-    if ($normalized -notin @($RepositoryUrl.TrimEnd('/'), 'git@github.com:arjunrose/arjun-rose-portfolio.git')) {
-        throw "Safety stop: this folder's origin points to '$normalized', not the new portfolio repository. No push was attempted."
-    }
+$Remote = git remote get-url origin 2>$null
+if ($LASTEXITCODE -eq 0 -and $Remote) {
+  $Normalised = $Remote.Trim().TrimEnd('/')
+  if ($Normalised -ne $Expected) {
+    throw "Safety stop: origin is '$Remote', not the intended new repository '$Expected'. No push was made."
+  }
 } else {
-    git remote add origin $RepositoryUrl
-    if ($LASTEXITCODE -ne 0) { throw 'Could not add the new portfolio repository as origin.' }
+  git remote add origin $RepoUrl
+  if ($LASTEXITCODE -ne 0) { throw 'Could not add the origin remote.' }
 }
 
-git add --all
-if ($LASTEXITCODE -ne 0) { throw 'git add failed.' }
+git add -A
+if ($LASTEXITCODE -ne 0) { throw 'Could not stage the portfolio files.' }
 
-$changes = git status --porcelain
-if ($changes) {
-    git commit -m 'Publish Arjun Rose interactive portfolio'
-    if ($LASTEXITCODE -ne 0) { throw 'Commit failed. Configure your Git name/email, then run this script again.' }
+$Staged = git diff --cached --quiet
+if ($LASTEXITCODE -eq 0) {
+  Write-Host 'No new local changes to commit.' -ForegroundColor Yellow
 } else {
-    Write-Host 'No local changes to commit.' -ForegroundColor Yellow
+  git commit -m 'Build immersive Arjun Rose engineering portfolio'
+  if ($LASTEXITCODE -ne 0) { throw 'Git commit failed. Check git user.name and user.email.' }
 }
 
-# Deliberately no --force: this cannot overwrite remote history.
-git push --set-upstream origin main
+# Integrate an existing README or initial commit without force-pushing.
+git fetch origin main 2>$null
+if ($LASTEXITCODE -eq 0) {
+  git merge-base HEAD origin/main *> $null
+  if ($LASTEXITCODE -ne 0) {
+    git pull --rebase origin main
+    if ($LASTEXITCODE -ne 0) { throw 'Could not safely rebase onto the remote main branch. No force push was attempted.' }
+  } else {
+    git pull --rebase origin main
+    if ($LASTEXITCODE -ne 0) { throw 'Could not safely update from the remote main branch. No force push was attempted.' }
+  }
+}
+
+git push -u origin main
 if ($LASTEXITCODE -ne 0) {
-    throw 'Push failed. Complete GitHub sign-in when prompted and check that the new repository is empty and you have write access.'
+  throw 'Push failed. Confirm GitHub authentication and that the connected account can write to arjunrose/arjun-rose-portfolio. No force push was attempted.'
 }
 
 Write-Host ''
-Write-Host 'Portfolio source pushed successfully.' -ForegroundColor Green
-Write-Host 'Next: open Settings > Pages in the NEW repository and select GitHub Actions as the source.' -ForegroundColor Yellow
-Write-Host 'Deployment URL: https://arjunrose.github.io/arjun-rose-portfolio/' -ForegroundColor Cyan
+Write-Host 'Portfolio pushed to the new repository.' -ForegroundColor Green
+Write-Host 'https://github.com/arjunrose/arjun-rose-portfolio' -ForegroundColor Cyan
+Write-Host 'After GitHub Pages completes its workflow, check:' -ForegroundColor Green
+Write-Host 'https://arjunrose.github.io/arjun-rose-portfolio/' -ForegroundColor Cyan
+Write-Host 'The existing Arjun_Rose_J_S repository was not accessed by this script.' -ForegroundColor Green
